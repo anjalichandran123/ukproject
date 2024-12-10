@@ -16,6 +16,7 @@ const userSchema = new mongoose.Schema(
       default: "user", // Default role is 'user'
       required: true,
     },
+    isAdmitted: { type: Boolean, default: false },
     readyToWork: [{
         type: Boolean,
     }],

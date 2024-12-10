@@ -33,6 +33,7 @@ export const registerUser = asyncHandler(async (req, res, next) => {
       dateOfBirth,
       phoneNumber,
       password: hashedPassword,
+      isAdmitted: false,
     });
   
     // Save the user to the database
@@ -67,6 +68,10 @@ export const loginUser = asyncHandler(async (req, res, next) => {
     const user = await User.findOne({ email });
     if (!user) {
       return next(new AppError("Invalid email or password", 401));
+    }
+
+    if (!user.isAdmitted) {
+      return next(new AppError("User has not been admitted by the admin", 403));
     }
   
     // Compare the provided password with the stored hashed password

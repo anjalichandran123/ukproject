@@ -1,8 +1,6 @@
 import {Activity} from "../model/activityModel.js";
 import asyncHandler from "../middlewares/asyncHandler.middleware.js";
-import AppError from "../utils/error.util.js";
-import nacl from "tweetnacl";
-import { TextEncoder } from "util";
+import { User } from "../model/userModel.js";
 
 
 export const setUserActive = async (req, res) => {
@@ -55,47 +53,62 @@ export const getActiveUsers = asyncHandler(async (req, res) => {
   });
 });
 
-
 /**
- * Admin assigns a location to an active user
+ * Admin assigns a location to an active user or creates a new activity for the next day
  */
 export const assignLocationToActiveUser = asyncHandler(async (req, res) => {
-  const { activityId, location } = req.body;
+  const { userId, location } = req.body;
 
-  if (!activityId || !location) {
-    return res.status(400).json({ message: "Activity ID and location are required." });
+  if (!userId || !location) {
+    return res.status(400).json({ message: "User ID and location are required." });
   }
 
   try {
-    // Fetch the activity
-    const activity = await Activity.findById(activityId).populate("user", "firstname lastname");
-
-    if (!activity) {
-      return res.status(404).json({ message: "Activity not found." });
+    // Ensure the user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
     }
 
-    // Ensure the user is active
-    if (!activity.isActive) {
-      return res.status(400).json({
-        message: `User ${activity.user.firstname} ${activity.user.lastname} is not currently active.`,
-      });
+    // Fetch the current active activity for the user
+    let activity = await Activity.findOne({ user: userId, isActive: true });
+
+    // Check if the activity exists and belongs to today
+    const today = new Date().setHours(0, 0, 0, 0); // Start of today
+    if (activity && new Date(activity.startTime).setHours(0, 0, 0, 0) === today) {
+      return res.status(400).json({ message: "The user already has an active task for today." });
     }
 
-    // Assign the location
-    activity.location = location;
-    activity.lastUpdated = Date.now(); // Update the timestamp
-    await activity.save();
+    // Deactivate the previous activity (if any)
+    if (activity) {
+      activity.isActive = false;
+      await activity.save();
+    }
 
-    res.status(200).json({
+    // Create a new activity for today
+    const newActivity = new Activity({
+      user: userId,
+      location,
+      isActive: true,
+      startTime: null, // Reset start time
+      endTime: null, // Reset end time
+      nurseSignature: null, // Reset nurse details
+      nurseName: null, // Reset nurse details
+    });
+
+    await newActivity.save();
+
+    res.status(201).json({
       success: true,
-      message: `Location assigned successfully to ${activity.user.firstname} ${activity.user.lastname}.`,
-      activity,
+      message: "New activity assigned successfully.",
+      activity: newActivity,
     });
   } catch (error) {
-    console.error("Error assigning location:", error);
+    console.error("Error assigning new activity:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 });
+
 
 /**
  * User fetches their assigned work
@@ -172,101 +185,53 @@ export const startWork = asyncHandler(async (req, res) => {
   });
 
 
+// ------------------------------------------submit----------------------------------------
 
 
-
-//   -------------------------------------------------------submit--------------------------------------
-  
   export const submitNurseSignature = asyncHandler(async (req, res) => {
     const { userId, nurseSignature, nurseName } = req.body;
   
     if (!userId || !nurseSignature || !nurseName) {
-      return res.status(400).json({
-        message: "User ID, nurse's signature, and nurse's name are required.",
-      });
+      return res.status(400).json({ message: "User ID, nurse's signature, and nurse's name are required." });
     }
   
     try {
-      // Fetch the current day's activity
-      const today = new Date().setHours(0, 0, 0, 0); // Start of today
-      const activity = await Activity.findOne({ 
-        user: userId, 
-        isActive: true, 
-        workDate: today 
-      });
+      // Fetch the activity assigned to the user that is active
+      const activity = await Activity.findOne({ user: userId, isActive: true });
   
       if (!activity) {
-        return res.status(404).json({ message: "No active work assigned to this user for today." });
+        return res.status(404).json({ message: "No active work assigned to this user." });
       }
   
-      // Check if work is already completed
+      // Check if work is already completed (end time is set)
       if (activity.endTime) {
-        return res.status(400).json({ message: "Work has already been completed for today." });
+        return res.status(400).json({ message: "Work has already been completed." });
       }
   
-      // Set end time, nurse's signature, and name
+      // Set the end time, nurse's signature, and nurse's name
       activity.endTime = new Date();
-      activity.nurseSignature = nurseSignature;
-      activity.nurseName = nurseName;
-      activity.isActive = false; // Mark the activity as inactive
+      activity.nurseSignature = nurseSignature; // Save the nurse's signature
+      activity.nurseName = nurseName; // Save the nurse's name
+      activity.isActive = false; // Mark the activity as inactive (work is completed)
       await activity.save();
   
       res.status(200).json({
         success: true,
-        message: "Work completed successfully for today.",
+        message: "Work completed successfully with nurse's signature.",
         startTime: activity.startTime,
         endTime: activity.endTime,
-        nurseName: activity.nurseName,
         nurseSignature: activity.nurseSignature,
+        nurseName: activity.nurseName,
       });
     } catch (error) {
       console.error("Error submitting nurse signature:", error);
-      res.status(500).json({ message: "Server error", error: error.message });
-    }
+      res.status(500).json({ message: "Server error", error: error.message });
+    }
   });
- 
-  
-/**
- * Get total working days for a user
- */
-export const getTotalWorkingDays = asyncHandler(async (req, res) => {
-    const { userId } = req.body;
-  
-    if (!userId) {
-      return res.status(400).json({ message: "User ID is required." });
-    }
-  
-    try {
-      // Fetch all completed activities for the user
-      const activities = await Activity.find({
-        user: userId,
-        isActive: false, // Completed activities
-      });
-  
-      if (activities.length === 0) {
-        return res.status(404).json({ message: "No completed work found for this user." });
-      }
-  
-      // Extract unique working days
-      const workingDays = new Set(
-        activities.map((activity) =>
-          new Date(activity.startTime).toISOString().split("T")[0] // Extract only the date part
-        )
-      );
-  
-      res.status(200).json({
-        success: true,
-        message: `Total working days: ${workingDays.size}`,
-        totalWorkingDays: workingDays.size,
-      });
-    } catch (error) {
-      console.error("Error calculating total working days:", error);
-      res.status(500).json({ message: "Server error", error: error.message });
-    }
-  });
-  
 
-/**
+
+
+ /**
  * Get total working days with details for a user
  */
 export const getTotalWorkingDaysWithDetails = asyncHandler(async (req, res) => {
@@ -291,7 +256,7 @@ export const getTotalWorkingDaysWithDetails = asyncHandler(async (req, res) => {
     const workingDaysDetails = activities.reduce((details, activity) => {
       const date = new Date(activity.startTime).toISOString().split("T")[0]; // Extract only the date part
       const time = new Date(activity.startTime).toISOString().split("T")[1]; // Extract time
-      const location = activity.location || "Unknown Location"; // Add location if available
+      const location = activity.location ; // Add location if available
 
       if (!details[date]) {
         details[date] = [];

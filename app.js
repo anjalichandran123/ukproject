@@ -35,3 +35,4 @@ app.use("/api/admin", route);
 app.use("/api/user",userroute);
 app.use("/api/user",activityroute);
 app.use("/api/admin",activityroute);
+
