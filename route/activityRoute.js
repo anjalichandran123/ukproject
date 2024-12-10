@@ -15,7 +15,7 @@ activityroute.post("/setUserActive", setUserActive);
 activityroute.get("/getActiveUsers", getActiveUsers);
 activityroute.post("/assignLocationToActiveUser",assignLocationToActiveUser );
 activityroute.get("/:userId/getUserAssignedWork",getUserAssignedWork);
-activityroute.get("/:userId/startWork",startWork)
+activityroute.get("/:userId/startWork",startWork);
 activityroute.post("/submitNurseSignature",submitNurseSignature);
 activityroute.get("/:userId/getTotalWorkingDaysWithDetails",getTotalWorkingDaysWithDetails);
 
