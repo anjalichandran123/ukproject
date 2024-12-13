@@ -156,17 +156,12 @@ export const admitUser = asyncHandler(async (req, res, next) => {
   });
 });
 
-
-
-/**
- * Admin: Get total working days with details for all users
- */
-export const getAllUsersWorkingDaysWithDetails = asyncHandler(async (req, res) => {
+export const getAllUsersWorkingDaysWithDetails = async (req, res) => {
   try {
     // Fetch all completed activities
-    const activities = await Activity.find({ isActive: false }) // Only completed activities
-      .populate("user", "firstname lastname email") // Populate user details
-      .select("user startTime location"); // Select relevant fields
+    const activities = await Activity.find({ isActive: false })
+      .populate("user", "firstname lastname email")
+      .select("user startTime location");
 
     if (activities.length === 0) {
       return res.status(404).json({ message: "No completed work found for any user." });
@@ -174,6 +169,18 @@ export const getAllUsersWorkingDaysWithDetails = asyncHandler(async (req, res) =
 
     // Group activities by user and then by date
     const userWorkingDays = activities.reduce((result, activity) => {
+      // Validate user
+      if (!activity.user) {
+        console.warn("Activity has no associated user:", activity);
+        return result; // Skip this activity
+      }
+
+      // Validate startTime
+      if (!activity.startTime || isNaN(new Date(activity.startTime).getTime())) {
+        console.warn("Invalid startTime for activity:", activity);
+        return result; // Skip invalid activity
+      }
+
       const userId = activity.user._id;
       const date = new Date(activity.startTime).toISOString().split("T")[0]; // Extract date
       const time = new Date(activity.startTime).toISOString().split("T")[1]; // Extract time
@@ -187,15 +194,29 @@ export const getAllUsersWorkingDaysWithDetails = asyncHandler(async (req, res) =
             lastname: activity.user.lastname,
             email: activity.user.email,
           },
-          workingDays: {},
+          workingDays: {}, // Initialize an empty object to store working days
         };
       }
 
       if (!result[userId].workingDays[date]) {
-        result[userId].workingDays[date] = [];
+        result[userId].workingDays[date] = {
+          totalWorkingTime: 0, // Initialize total working time for the date
+          activities: [], // Array to store details of activities on this date
+        };
       }
 
-      result[userId].workingDays[date].push({ time, location });
+      // Add current activity details to the date
+      const activityDetails = {
+        time,
+        location,
+      };
+
+      result[userId].workingDays[date].activities.push(activityDetails);
+
+      // Calculate total working time for the date (time format: HH:MM:SS)
+      const [hours, minutes, seconds] = time.split(":");
+      const totalTimeInSeconds = parseInt(hours) * 3600 + parseInt(minutes) * 60 + parseInt(seconds);
+      result[userId].workingDays[date].totalWorkingTime += totalTimeInSeconds;
 
       return result;
     }, {});
@@ -206,7 +227,9 @@ export const getAllUsersWorkingDaysWithDetails = asyncHandler(async (req, res) =
       totalWorkingDays: Object.keys(user.workingDays).length,
       workingDaysDetails: Object.entries(user.workingDays).map(([date, details]) => ({
         date,
-        details,
+        totalWorkingTime: details.totalWorkingTime, // In seconds
+        workingTimeFormatted: formatTimeInHours(details.totalWorkingTime), // Formatted in hours
+        activities: details.activities, // Activities for this date
       })),
     }));
 
@@ -219,4 +242,46 @@ export const getAllUsersWorkingDaysWithDetails = asyncHandler(async (req, res) =
     console.error("Error fetching working days for all users:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
+};
+
+// Helper function to format working time from seconds to hours
+const formatTimeInHours = (totalSeconds) => {
+  const hours = totalSeconds / 3600; // Convert seconds to hours
+  return hours.toFixed(2); // Limit to 2 decimal places
+};
+
+
+
+
+/**
+ * @ADMIN_GET_UNADMITTED_USERS ----------------GET UNADMITTED USERS---------------
+ * Retrieves all users who are not admitted.
+ */
+export const getUnadmittedUsers = asyncHandler(async (req, res, next) => {
+  try {
+    // Find all users with isAdmitted set to false
+    const unadmittedUsers = await User.find({ isAdmitted: false }, { password: 0 }); // Exclude password from the response
+
+    // Handle no results found
+    if (!unadmittedUsers || unadmittedUsers.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No unadmitted users found",
+      });
+    }
+
+    // Respond with unadmitted users
+    res.status(200).json({
+      success: true,
+      message: "Unadmitted users fetched successfully",
+      unadmittedUsers,
+    });
+  } catch (error) {
+    // Handle server error
+    res.status(500).json({
+      success: false,
+      message: "An error occurred while fetching unadmitted users",
+      error: error.message,
+    });
+  }
 });

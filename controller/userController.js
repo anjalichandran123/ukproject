@@ -129,3 +129,121 @@ export const logoutUser = asyncHandler(async (req, res, next) => {
     });
   });
 
+
+/**
+ * @USER_PROFILE -----------------------USER PROFILE-----------------------
+ * Fetches and returns the profile of the logged-in user.
+ */
+export const getUserProfile = asyncHandler(async (req, res, next) => {
+  const { userId } = req.params;
+
+  // Validate required field
+  if (!userId) {
+      return next(new AppError("User ID is required", 400));
+  }
+
+  // Find the user by ID
+  const user = await User.findById(userId).select("-password -isAdmitted"); // Exclude sensitive fields
+  if (!user) {
+      return next(new AppError("User not found", 404));
+  }
+
+  // Respond with the user's profile
+  res.status(200).json({
+      success: true,
+      message: "User profile retrieved successfully",
+      user: {
+          id: user._id,
+          firstname: user.firstname,
+          lastname: user.lastname,
+          email: user.email,
+          role: user.role,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt,
+      },
+  });
+});
+
+
+
+
+/**
+ * Get total working days with total time details for a user
+ */
+export const getTotalWorkingDaysWithDetails = async (req, res) => {
+  const { userId } = req.body;
+
+  if (!userId) {
+    return res.status(400).json({ message: "User ID is required." });
+  }
+
+  try {
+    // Fetch all completed activities for the user
+    const activities = await Activity.find({
+      user: userId,
+      isActive: false, // Completed activities
+    });
+
+    if (activities.length === 0) {
+      return res.status(404).json({ message: "No completed work found for this user." });
+    }
+
+    // Group activities by date and calculate total time
+    const workingDaysDetails = activities.reduce((details, activity) => {
+      const date = new Date(activity.startTime).toISOString().split("T")[0]; // Extract only the date part
+      const location = activity.location; // Add location if available
+
+      if (!details[date]) {
+        details[date] = {
+          totalWorkingTime: 0, // Initialize total working time for the day in seconds
+          activities: [],
+        };
+      }
+
+      // Calculate working time for the activity (in seconds)
+      const startTime = new Date(activity.startTime);
+      const endTime = new Date(activity.endTime);
+      const workingTimeInSeconds = (endTime - startTime) / 1000; // Convert milliseconds to seconds
+
+      // Add activity details and accumulate total working time
+      details[date].activities.push({
+        startTime: activity.startTime,
+        endTime: activity.endTime,
+        location,
+        workingTime: formatTimeInHours(workingTimeInSeconds), // Format working time in hours
+      });
+
+      details[date].totalWorkingTime += workingTimeInSeconds;
+
+      return details;
+    }, {});
+
+    // Format the response
+    const response = {
+      success: true,
+      message: `Total working days: ${Object.keys(workingDaysDetails).length}`,
+      totalWorkingDays: Object.keys(workingDaysDetails).length,
+      workingDaysDetails: Object.entries(workingDaysDetails).map(([date, details]) => ({
+        date,
+        totalWorkingTime: formatTimeInHours(details.totalWorkingTime), // Format total working time in hours
+        activities: details.activities,
+      })),
+    };
+
+    res.status(200).json(response);
+  } catch (error) {
+    console.error("Error calculating total working days:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+// Helper function to format working time from seconds to hours
+const formatTimeInHours = (totalSeconds) => {
+  const hours = totalSeconds / 3600; // Convert seconds to hours
+  return hours.toFixed(2); // Limit to 2 decimal places
+};
+
+
+
+
+
