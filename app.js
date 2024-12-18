@@ -5,7 +5,7 @@ import bodyParser from "body-parser";
 import route from "./route/adminRoute.js";
 import userroute from "./route/userRoute.js";
 import activityroute from "./route/activityRoute.js";
-
+import session from "express-session";
 
 dotenv.config();
 
@@ -30,6 +30,17 @@ mongoose
 app.get("/", (req, res) => {
   res.send("Hello From database");
 });
+
+
+// app.use(
+//   session({
+//     secret: "16f2e9c07b5d49e2a7a39d5bc4adcb8854fd6a9012c7e34eac8d8470b6f5fa32", // Replace with a secure random string
+//     resave: false, // Prevent resaving session if no changes
+//     saveUninitialized: true, // Save uninitialized sessions
+//     cookie: { secure: false }, // Use secure: true in production with HTTPS
+//   })
+// );
+
 
 app.use("/api/admin", route);
 app.use("/api/user",userroute);

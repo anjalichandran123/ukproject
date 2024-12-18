@@ -29,9 +29,16 @@ const userSchema = new mongoose.Schema(
       required: true,
     },
     isAdmitted: { type: Boolean, default: false },
-    readyToWork: [{
+    readyToWork: [
+      {
         type: Boolean,
-    }],
+      },
+    ],
+    isActive: { 
+      type: Boolean, 
+      default: false, // Default to inactive when a user is created
+      required: true 
+    },
   },
   { timestamps: true }
 );

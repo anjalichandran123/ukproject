@@ -156,6 +156,138 @@ export const admitUser = asyncHandler(async (req, res, next) => {
   });
 });
 
+
+/**
+ * @ADMIN_GET_UNADMITTED_USERS ----------------GET UNADMITTED USERS---------------
+ * Retrieves all users who are not admitted.
+ */
+export const getUnadmittedUsers = asyncHandler(async (req, res, next) => {
+  try {
+    // Find all users with isAdmitted set to false
+    const unadmittedUsers = await User.find({ isAdmitted: false }, { password: 0 }); // Exclude password from the response
+
+    // Handle no results found
+    if (!unadmittedUsers || unadmittedUsers.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No unadmitted users found",
+      });
+    }
+
+    // Respond with unadmitted users
+    res.status(200).json({
+      success: true,
+      message: "Unadmitted users fetched successfully",
+      unadmittedUsers,
+    });
+  } catch (error) {
+    // Handle server error
+    res.status(500).json({
+      success: false,
+      message: "An error occurred while fetching unadmitted users",
+      error: error.message,
+    });
+  }
+});
+
+
+// -------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+/**
+ * Haversine formula to calculate the distance between two points on Earth.
+ */
+const calculateDistance = (lat1, lon1, lat2, lon2) => {
+  const toRad = (value) => (value * Math.PI) / 180; // Converts degrees to radians
+  const R = 6371; // Earth's radius in kilometers
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c; // Distance in kilometers
+};
+
+
+/**
+ * Admin assigns a location to an active user or creates a new activity for the next day
+ * based on latitude and longitude.
+ */
+export const assignLocationToActiveUser = asyncHandler(async (req, res) => {
+  const { userId, location, latitude, longitude } = req.body;
+
+  if (!userId || !location || !latitude || !longitude) {
+    return res
+      .status(400)
+      .json({ message: "User ID, location, latitude, and longitude are required." });
+  }
+
+  try {
+    // Ensure the user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    // Fetch the current active activity for the user
+    let activity = await Activity.findOne({ user: userId, isActive: true });
+
+    // Check if the activity exists and belongs to today
+    const today = new Date().setHours(0, 0, 0, 0); // Start of today
+    if (activity && new Date(activity.startTime).setHours(0, 0, 0, 0) === today) {
+      return res.status(400).json({ message: "The user already has an active task for today." });
+    }
+
+    // Deactivate the previous activity (if any)
+    if (activity) {
+      activity.isActive = false;
+      await activity.save();
+    }
+
+    // Assign the new location only if the user is within a certain distance (e.g., 10 km)
+    const targetLatitude = location.latitude;
+    const targetLongitude = location.longitude;
+
+    const distance = calculateDistance(latitude, longitude, targetLatitude, targetLongitude);
+
+    if (distance > 10) {
+      return res
+        .status(400)
+        .json({ message: "User is too far from the assigned location." });
+    }
+
+    // Create a new activity for today
+    const newActivity = new Activity({
+      user: userId,
+      location,
+      isActive: true,
+      startTime: null, // Reset start time
+      endTime: null, // Reset end time
+      nurseSignature: null, // Reset nurse details
+      nurseName: null, // Reset nurse details
+    });
+
+    await newActivity.save();
+
+    res.status(201).json({
+      success: true,
+      message: "New activity assigned successfully.",
+      activity: newActivity,
+    });
+  } catch (error) {
+    console.error("Error assigning new activity:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+});
+
+
+
+
+// ------------------------attendance------------------
 export const getAllUsersWorkingDaysWithDetails = async (req, res) => {
   try {
     // Fetch all completed activities
@@ -249,39 +381,3 @@ const formatTimeInHours = (totalSeconds) => {
   const hours = totalSeconds / 3600; // Convert seconds to hours
   return hours.toFixed(2); // Limit to 2 decimal places
 };
-
-
-
-
-/**
- * @ADMIN_GET_UNADMITTED_USERS ----------------GET UNADMITTED USERS---------------
- * Retrieves all users who are not admitted.
- */
-export const getUnadmittedUsers = asyncHandler(async (req, res, next) => {
-  try {
-    // Find all users with isAdmitted set to false
-    const unadmittedUsers = await User.find({ isAdmitted: false }, { password: 0 }); // Exclude password from the response
-
-    // Handle no results found
-    if (!unadmittedUsers || unadmittedUsers.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "No unadmitted users found",
-      });
-    }
-
-    // Respond with unadmitted users
-    res.status(200).json({
-      success: true,
-      message: "Unadmitted users fetched successfully",
-      unadmittedUsers,
-    });
-  } catch (error) {
-    // Handle server error
-    res.status(500).json({
-      success: false,
-      message: "An error occurred while fetching unadmitted users",
-      error: error.message,
-    });
-  }
-});
